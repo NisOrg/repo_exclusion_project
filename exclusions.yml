@@ -6,3 +6,6 @@ excluded_repositories:
       - "Air-Gapped / Alternative Scanner"
     requested_by: "github-username"
     approved_by: "security-team-member"
+  - name: "repo_exclusion_project"
+    reason: "Local sandbox testing, no production data"
+    approved_by: "sec-admin"
