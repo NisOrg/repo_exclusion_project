@@ -1,0 +1,116 @@
+name: Sync Wiz GitHub App Scope
+
+on:
+  schedule:
+    # Daily run at midnight UTC
+    - cron: '0 0 * * *'
+  push:
+    branches:
+      - main
+    paths:
+      # Runs immediately when security team merges a change to exclusions.yml
+      - 'exclusions.yml'
+  workflow_dispatch:
+
+jobs:
+  sync-wiz-access:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: pip install requests pyyaml
+
+      - name: Execute Scope Sync
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          ORG_NAME: ${{ github.repository_owner }}
+          INSTALLATION_ID: ${{ secrets.WIZ_APP_INSTALLATION_ID }}
+        run: |
+          cat << 'EOF' > sync.py
+          import os
+          import sys
+          import yaml
+          import requests
+
+          token = os.environ.get("GH_TOKEN")
+          org = os.environ.get("ORG_NAME")
+          installation_id = os.environ.get("INSTALLATION_ID")
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28"
+          }
+
+          # 1. Read exclusions.yml
+          try:
+              with open("exclusions.yml", "r") as f:
+                  data = yaml.safe_load(f) or {}
+                  excluded_list = [
+                      item["name"].strip().lower() 
+                      for item in data.get("excluded_repositories", []) 
+                      if "name" in item
+                  ]
+          except Exception as e:
+              print(f"Failed to parse exclusions.yml: {e}")
+              sys.exit(1)
+
+          print(f"Loaded {len(excluded_list)} excluded repos from exclusions.yml")
+
+          # 2. Fetch all org repos via pagination
+          all_repos = []
+          page = 1
+          while True:
+              url = f"https://api.github.com/orgs/{org}/repos?per_page=100&page={page}"
+              res = requests.get(url, headers=headers)
+              
+              if res.status_code != 200:
+                  print(f"Error fetching org repos: {res.status_code} - {res.text}")
+                  sys.exit(1)
+                  
+              page_data = res.json()
+              if not page_data:
+                  break
+                  
+              all_repos.extend(page_data)
+              page += 1
+
+          print(f"Total organization repos: {len(all_repos)}")
+
+          # 3. Build allowed repo IDs list
+          allowed_repo_ids = []
+          skipped_repos = []
+
+          for repo in all_repos:
+              repo_name = repo["name"].lower()
+              if repo_name in excluded_list:
+                  skipped_repos.append(repo["name"])
+              else:
+                  allowed_repo_ids.append(repo["id"])
+
+          print(f"Allowed repos count: {len(allowed_repo_ids)}")
+          print(f"Excluded repos count: {len(skipped_repos)}")
+
+          # 4. Atomically update GitHub App Installation
+          sync_url = f"https://api.github.com/user/installations/{installation_id}/repositories"
+          payload = {"repository_ids": allowed_repo_ids}
+
+          put_res = requests.put(sync_url, headers=headers, json=payload)
+
+          if put_res.status_code in [200, 204]:
+              print("Successfully updated Wiz GitHub App repository scope!")
+          else:
+              print(f"Failed to update GitHub App scope: {put_res.status_code} - {put_res.text}")
+              sys.exit(1)
+
+          EOF
+
+          python sync.py
