@@ -100,7 +100,7 @@ jobs:
           print(f"Excluded repos count: {len(skipped_repos)}")
 
           # 4. Atomically update GitHub App Installation
-          sync_url = f"https://api.github.com/user/installations/{installation_id}/repositories"
+          sync_url = f"https://api.github.com/orgs/{org}/installations/{installation_id}/repositories"
           payload = {"repository_ids": allowed_repo_ids}
 
           put_res = requests.put(sync_url, headers=headers, json=payload)
