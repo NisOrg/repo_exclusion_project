@@ -1,0 +1,8 @@
+excluded_repositories:
+  - name: "sample-repo-name"
+    reason: "Detailed explanation for exemption..."
+    criteria_met:
+      - "Environment Isolation"
+      - "Air-Gapped / Alternative Scanner"
+    requested_by: "github-username"
+    approved_by: "security-team-member"
