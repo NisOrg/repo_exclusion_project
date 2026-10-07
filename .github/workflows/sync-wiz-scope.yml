@@ -15,7 +15,6 @@ on:
 jobs:
   sync-wiz-access:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -82,35 +81,61 @@ jobs:
                   
               all_repos.extend(page_data)
               page += 1
-
           print(f"Total organization repos: {len(all_repos)}")
 
-          # 3. Build allowed repo IDs list
-          allowed_repo_ids = []
-          skipped_repos = []
+          # 3. Build allowed and excluded repo ID lists
+          allowed_repo_ids = {}
+          excluded_repo_ids = {}
 
           for repo in all_repos:
               repo_name = repo["name"].lower()
               if repo_name in excluded_list:
-                  skipped_repos.append(repo["name"])
+                  excluded_repo_ids[repo["id"]] = repo["name"]
               else:
-                  allowed_repo_ids.append(repo["id"])
+                  allowed_repo_ids[repo["id"]] = repo["name"]
 
           print(f"Allowed repos count: {len(allowed_repo_ids)}")
-          print(f"Excluded repos count: {len(skipped_repos)}")
+          print(f"Excluded repos count: {len(excluded_repo_ids)}")
 
-          # 4. Atomically update GitHub App Installation
-          sync_url = f"https://api.github.com/orgs/{org}/installations/{installation_id}/repositories"
-          payload = {"repository_ids": allowed_repo_ids}
+          # 4. Fetch repos currently assigned to the GitHub App installation
+          current_installed_ids = set()
+          inst_page = 1
+          while True:
+              inst_url = f"https://api.github.com/user/installations/{installation_id}/repositories?per_page=100&page={inst_page}"
+              inst_res = requests.get(inst_url, headers=headers)
+              if inst_res.status_code != 200:
+                  print(f"Error fetching current installation repos: {inst_res.status_code} - {inst_res.text}")
+                  sys.exit(1)
+              
+              repos_data = inst_res.json().get("repositories", [])
+              if not repos_data:
+                  break
+              for r in repos_data:
+                  current_installed_ids.add(r["id"])
+              inst_page += 1
 
-          put_res = requests.put(sync_url, headers=headers, json=payload)
+          # 5. Remove newly excluded repos from the installation
+          for repo_id, repo_name in excluded_repo_ids.items():
+              if repo_id in current_installed_ids:
+                  del_url = f"https://api.github.com/user/installations/{installation_id}/repositories/{repo_id}"
+                  del_res = requests.delete(del_url, headers=headers)
+                  if del_res.status_code == 204:
+                      print(f"Removed excluded repo from scope: {repo_name} ({repo_id})")
+                  else:
+                      print(f"Failed to remove {repo_name}: {del_res.status_code} - {del_res.text}")
+                      sys.exit(1)
 
-          if put_res.status_code in [200, 204]:
-              print("Successfully updated Wiz GitHub App repository scope!")
-          else:
-              print(f"Failed to update GitHub App scope: {put_res.status_code} - {put_res.text}")
-              sys.exit(1)
+          # 6. Add allowed repos that are missing from the installation
+          for repo_id, repo_name in allowed_repo_ids.items():
+              if repo_id not in current_installed_ids:
+                  add_url = f"https://api.github.com/user/installations/{installation_id}/repositories/{repo_id}"
+                  add_res = requests.put(add_url, headers=headers)
+                  if add_res.status_code in [204, 304]:
+                      print(f"Added allowed repo to scope: {repo_name} ({repo_id})")
+                  else:
+                      print(f"Failed to add {repo_name}: {add_res.status_code} - {add_res.text}")
+                      sys.exit(1)
 
+          print("Successfully synced Wiz GitHub App repository scope!")
           EOF
-
           python sync.py
