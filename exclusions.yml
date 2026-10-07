@@ -1,8 +1,7 @@
 excluded_repositories:
-    requested_by: "github-username"
-    approved_by: "security-team-member"
   - name: "repo_exclusion_project"
     reason: "Local sandbox testing, no production data"
+    requested_by: "github-username"
     approved_by: "sec-admin"
   - name: "wekiotestings"
     reason: "Test again with nisosec user the to see different results compare to last run of the action - results should be: Excluded repos count: 2"
