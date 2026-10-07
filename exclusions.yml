@@ -6,3 +6,6 @@ excluded_repositories:
   - name: "wekiotestings"
     reason: "Test again with nisosec user the to see different results compare to last run of the action - results should be: Excluded repos count: 2"
     approved_by: "sec-admin"
+  - name: "jenkins_wiz_demo"
+    reason: "Test verification after succesfull run"
+    approved_by: "sec-admin"
