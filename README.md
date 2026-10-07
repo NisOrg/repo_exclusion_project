@@ -41,8 +41,6 @@ Exclusions are managed declaratively inside the `exclusions.yml` file in the roo
 ### `exclusions.yml` Format:
 
 ```yaml
-requested_by: "platform-request-user"
-approved_by: "security-reviewer"
 
 excluded_repositories:
   - name: "sandbox-sandbox-testing"
