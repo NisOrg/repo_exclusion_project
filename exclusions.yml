@@ -9,3 +9,6 @@ excluded_repositories:
   - name: "repo_exclusion_project"
     reason: "Local sandbox testing, no production data"
     approved_by: "sec-admin"
+  - name: "wekiotestings"
+    reason: "Test again with nisosec user the to see different results compare to last run of the action - results should be: Excluded repos count: 2"
+    approved_by: "sec-admin"
