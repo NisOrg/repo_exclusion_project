@@ -83,19 +83,75 @@ jobs:
               page += 1
           print(f"Total organization repos: {len(all_repos)}")
 
-          # 3. Build allowed and excluded repo ID lists
-          allowed_repo_ids = {}
-          excluded_repo_ids = {}
+          # 3. Fetch the repositories currently in the GitHub App installation scope
+          sync_url = f"https://api.github.com/user/installations/{installation_id}/repositories"
+          scoped_repos = []
+          page = 1
+          while True:
+              url = f"{sync_url}?per_page=100&page={page}"
+              res = requests.get(url, headers=headers)
 
-          for repo in all_repos:
-              repo_name = repo["name"].lower()
-              if repo_name in excluded_list:
-                  excluded_repo_ids[repo["id"]] = repo["name"]
-              else:
-                  allowed_repo_ids[repo["id"]] = repo["name"]
+              if res.status_code != 200:
+                  print(f"Error fetching current app scope: {res.status_code} - {res.text}")
+                  sys.exit(1)
 
-          print(f"Allowed repos count: {len(allowed_repo_ids)}")
-          print(f"Excluded repos count: {len(excluded_repo_ids)}")
+              page_data = res.json().get("repositories", [])
+              if not page_data:
+                  break
+
+              scoped_repos.extend(page_data)
+              page += 1
+
+          scoped_repo_ids = {repo["id"] for repo in scoped_repos}
+          excluded_repo_ids = {
+              repo["id"] for repo in all_repos
+              if repo["name"].lower() in excluded_list
+          }
+          allowed_repos = [
+              repo for repo in all_repos
+              if repo["name"].lower() not in excluded_list
+          ]
+          repos_to_add = [
+              repo for repo in allowed_repos
+              if repo["id"] not in scoped_repo_ids
+          ]
+          repos_to_remove = [
+              repo for repo in scoped_repos
+              if repo["id"] in excluded_repo_ids
+          ]
+
+          print(f"Allowed organization repos: {len(allowed_repos)}")
+          print(f"New repositories to add to Wiz scope: {len(repos_to_add)}")
+          print(f"Excluded repositories to remove from Wiz scope: {len(repos_to_remove)}")
+
+          # 4. Add newly created repositories and remove excluded repositories
+          for repo in repos_to_add:
+              repo_url = f"{sync_url}/{repo['id']}"
+              put_res = requests.put(repo_url, headers=headers)
+
+              if put_res.status_code != 204:
+                  print(
+                      f"Failed to add {repo['name']} to app scope: "
+                      f"{put_res.status_code} - {put_res.text}"
+                  )
+                  sys.exit(1)
+
+              print(f"Added {repo['name']} to Wiz scope")
+
+          for repo in repos_to_remove:
+              repo_url = f"{sync_url}/{repo['id']}"
+              delete_res = requests.delete(repo_url, headers=headers)
+
+              if delete_res.status_code != 204:
+                  print(
+                      f"Failed to remove {repo['name']} from app scope: "
+                      f"{delete_res.status_code} - {delete_res.text}"
+                  )
+                  sys.exit(1)
+
+              print(f"Removed excluded repository {repo['name']} from Wiz scope")
+
+          print("Successfully synchronized Wiz GitHub App repository scope!")
 
           # 4. Fetch repos currently assigned to the GitHub App installation
           current_installed_ids = set()
